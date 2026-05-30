@@ -26,13 +26,13 @@ while IFS= read -r line || [ -n "$line" ]; do
     declare -A results_avgerr
     declare -A results_passed
 
-    # 大规模矩阵不测 CPU；小规模仍测试 cublas, naive, cpu
+    # 大规模矩阵不测 CPU；小规模测试 cublas, cpu
     total_elements=$((M * N))
     if [ $total_elements -gt 1048576 ]; then
-        kernels_list="cublas naive"
+        kernels_list="cublas"
         echo "  [策略] 大规模矩阵 - 跳过 CPU 测试"
     else
-        kernels_list="cublas naive cpu"
+        kernels_list="cublas cpu"
     fi
 
     # 迭代内核
@@ -106,8 +106,8 @@ while IFS= read -r line || [ -n "$line" ]; do
 
         # 对于 cuBLAS 与 CPU，不记录 block size（留空）；其他内核记录默认块尺寸
         if [ "$kernel" == "cublas" ] || [ "$kernel" == "cpu" ]; then
-            block_x_field=""
-            block_y_field=""
+            block_x_field="NA"
+            block_y_field="NA"
         else
             block_x_field="$BLOCK_SIZE_X"
             block_y_field="$BLOCK_SIZE_Y"

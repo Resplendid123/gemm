@@ -25,7 +25,7 @@ int main(int argc, char **argv)
     if (argc < 5)
     {
         printf("Usage: %s M N K kernel_type [block_x block_y]\n", argv[0]);
-        printf("kernel_type: naive, cublas, cpu\n");
+        printf("kernel_type: naive, shared, cublas, cpu\n");
         printf("Example: %s 1024 1024 1024 naive 16 16\n", argv[0]);
         return 1;
     }
@@ -83,7 +83,7 @@ int main(int argc, char **argv)
         else if (strncmp(argv[i], "--ref=", 6) == 0)
             ref_choice = std::string(argv[i] + 6);
     }
-
+    // naive kernel (Stage 1)
     if (kernel_type == "naive")
     {
         dim3 block(block_x, block_y);
@@ -99,6 +99,87 @@ int main(int argc, char **argv)
         CudaTimer timer;
         timer.start();
         run_naive_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, grid, block);
+        timer.stop();
+        elapsed_ms = timer.elapsed_ms();
+
+        gflops = compute_gflops(M, N, K, elapsed_ms);
+        printf("Time: %.3f ms, GFLOPS: %.2f\n", elapsed_ms, gflops);
+
+        // Copy result back
+        CHECK_CUDA_ERROR(cudaMemcpy(h_C, d_C, size_C, cudaMemcpyDeviceToHost));
+    }
+    // Shared memory tiled kernel (Stage 2)
+    else if (kernel_type == "shared")
+    {
+        dim3 block(block_x, block_y);
+        dim3 grid((N + block.x - 1) / block.x, (M + block.y - 1) / block.y);
+        printf("Running shared memory kernel with grid(%d,%d) block(%d,%d)\n",
+               grid.x, grid.y, block.x, block.y);
+
+        // Warmup
+        run_shared_memory_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, grid, block);
+        CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+
+        // Measure
+        CudaTimer timer;
+        timer.start();
+        run_shared_memory_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, grid, block);
+        timer.stop();
+        elapsed_ms = timer.elapsed_ms();
+
+        gflops = compute_gflops(M, N, K, elapsed_ms);
+        printf("Time: %.3f ms, GFLOPS: %.2f\n", elapsed_ms, gflops);
+
+        // Copy result back
+        CHECK_CUDA_ERROR(cudaMemcpy(h_C, d_C, size_C, cudaMemcpyDeviceToHost));
+    }
+    // Register blocking kernel (Stage 3)
+    else if (kernel_type == "register")
+    {
+        int config = 1;
+        for (int i = 5; i < argc; ++i)
+        {
+            if (strncmp(argv[i], "--config=", 9) == 0)
+                config = atoi(argv[i] + 9);
+        }
+        printf("Running register blocking kernel config %d\n", config);
+
+        // Warmup
+        run_register_blocking_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, 0, config);
+        CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+
+        // Measure
+        CudaTimer timer;
+        timer.start();
+        run_register_blocking_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, 0, config);
+        timer.stop();
+        elapsed_ms = timer.elapsed_ms();
+
+        gflops = compute_gflops(M, N, K, elapsed_ms);
+        printf("Time: %.3f ms, GFLOPS: %.2f\n", elapsed_ms, gflops);
+
+        // Copy result back
+        CHECK_CUDA_ERROR(cudaMemcpy(h_C, d_C, size_C, cudaMemcpyDeviceToHost));
+    }
+    // Bank conflict avoidance kernel (Stage 4) - 基于 Stage 3 的 Register Blocking + padding
+    else if (kernel_type == "bank")
+    {
+        int config = 1;
+        for (int i = 5; i < argc; ++i)
+        {
+            if (strncmp(argv[i], "--config=", 9) == 0)
+                config = atoi(argv[i] + 9);
+        }
+        printf("Running bank conflict kernel (register blocking + padding) config %d\n", config);
+
+        // Warmup
+        run_bank_conflict_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, 0, config);
+        CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+
+        // Measure
+        CudaTimer timer;
+        timer.start();
+        run_bank_conflict_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, 0, config);
         timer.stop();
         elapsed_ms = timer.elapsed_ms();
 

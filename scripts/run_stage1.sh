@@ -38,21 +38,16 @@ run_benchmark() {
             out=$($BENCH "$M" "$N" "$K" "$kernel" 2>&1)
         fi
 
-        local time
-        local gflops
-        time=$(echo "$out" | grep -oP '[0-9.]+(?= ms)' | head -1)
-        gflops=$(echo "$out" | grep -oP 'GFLOPS: \K[0-9.]+' | head -1)
+        local time=$(echo "$out" | grep -oP '[0-9.]+(?= ms)' | head -1)
+        local gflops=$(echo "$out" | grep -oP 'GFLOPS: \K[0-9.]+' | head -1)
 
         total_time=$(echo "$total_time + ${time:-0}" | bc)
         total_gflops=$(echo "$total_gflops + ${gflops:-0}" | bc)
     done
 
-    local avg_time
-    local avg_gflops
     avg_time=$(echo "scale=6; $total_time / $RUNS" | bc)
     avg_gflops=$(echo "scale=6; $total_gflops / $RUNS" | bc)
-
-    printf "%s\n%s\n" "$(printf "%.3f" "$avg_time")" "$(printf "%.2f" "$avg_gflops")"
+    printf "%.3f\n%.2f" "$avg_time" "$avg_gflops"
 }
 
 while IFS= read -r line || [ -n "$line" ]; do
@@ -65,7 +60,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     cublas_out=$(run_benchmark "$M" "$N" "$K" "cublas")
     cublas_time=$(echo "$cublas_out" | sed -n '1p')
     cublas_gflops=$(echo "$cublas_out" | sed -n '2p')
-    echo "$cfg_name,$M,$N,$K,,,cublas,$cublas_time,$cublas_gflops,100.00%" >> "$OUTPUT_CSV"
+    echo "$cfg_name,$M,$N,$K,NA,NA,cublas,$cublas_time,$cublas_gflops,100.00%" >> "$OUTPUT_CSV"
 
     for block_cfg in "${BLOCK_CONFIGS[@]}"; do
         read -r block_x block_y <<< "$block_cfg"
@@ -80,10 +75,7 @@ while IFS= read -r line || [ -n "$line" ]; do
         else
             rel="0.00"
         fi
-
-        if [[ $rel == .* ]]; then
-            rel="0$rel"
-        fi
+        [[ $rel == .* ]] && rel="0$rel"
 
         echo "$cfg_name,$M,$N,$K,$block_x,$block_y,naive,$naive_time,$naive_gflops,$rel%" >> "$OUTPUT_CSV"
     done

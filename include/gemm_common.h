@@ -50,6 +50,25 @@ void run_naive_kernel(float *d_C, const float *d_A, const float *d_B,
                       float alpha, float beta,
                       dim3 grid, dim3 block, cudaStream_t stream = 0);
 
+// Shared Memory Tiled CUDA kernel 启动封装
+void run_shared_memory_kernel(float *d_C, const float *d_A, const float *d_B,
+                              int M, int N, int K,
+                              float alpha, float beta,
+                              dim3 grid, dim3 block, cudaStream_t stream = 0);
+
+// Register Blocking GEMM kernel 启动封装
+void run_register_blocking_kernel(float *d_C, const float *d_A, const float *d_B,
+                                  int M, int N, int K,
+                                  float alpha, float beta,
+                                  cudaStream_t stream,
+                                  int config);
+
+// Bank Conflict Avoidance GEMM kernel 启动封装 (基于 Register Blocking + padding)
+void run_bank_conflict_kernel(float *d_C, const float *d_A, const float *d_B,
+                              int M, int N, int K,
+                              float alpha, float beta,
+                              cudaStream_t stream, int config);
+
 // 验证 GPU 计算结果与参考结果是否一致（允许相对误差）
 bool validate_result(const float *gpu_result, const float *ref_result,
                      int size, float eps, float &max_error, float &avg_error);
