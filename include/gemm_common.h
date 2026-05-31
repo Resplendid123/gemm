@@ -33,6 +33,7 @@
         }                                                                   \
     } while (0)
 
+// ========== 函数声明 ==========
 // CPU 参考 GEMM，行主序，支持 alpha 和 beta
 void cpu_gemm(float *C, const float *A, const float *B,
               int M, int N, int K,
@@ -44,7 +45,7 @@ void cublas_gemm(float *C, const float *A, const float *B,
                  float alpha, float beta,
                  cublasHandle_t handle, float &elapsed_ms);
 
-// 朴素 CUDA kernel 启动封装
+// Naive CUDA kernel 启动封装
 void run_naive_kernel(float *d_C, const float *d_A, const float *d_B,
                       int M, int N, int K,
                       float alpha, float beta,
@@ -54,7 +55,7 @@ void run_naive_kernel(float *d_C, const float *d_A, const float *d_B,
 void run_shared_memory_kernel(float *d_C, const float *d_A, const float *d_B,
                               int M, int N, int K,
                               float alpha, float beta,
-                              dim3 grid, dim3 block, cudaStream_t stream = 0);
+                              cudaStream_t stream, int config);
 
 // Register Blocking GEMM kernel 启动封装
 void run_register_blocking_kernel(float *d_C, const float *d_A, const float *d_B,
@@ -63,16 +64,29 @@ void run_register_blocking_kernel(float *d_C, const float *d_A, const float *d_B
                                   cudaStream_t stream,
                                   int config);
 
-// Bank Conflict Avoidance GEMM kernel 启动封装 (基于 Register Blocking + padding)
+// Bank Conflict Avoidance GEMM kernel 启动封装
 void run_bank_conflict_kernel(float *d_C, const float *d_A, const float *d_B,
                               int M, int N, int K,
                               float alpha, float beta,
                               cudaStream_t stream, int config);
 
+// Double Buffering GEMM kernel 启动封装
+void run_double_buffer_kernel(float *d_C, const float *d_A, const float *d_B,
+                              int M, int N, int K,
+                              float alpha, float beta,
+                              cudaStream_t stream, int config);
+
+// Tensor Core GEMM kernel 启动封装
+void run_tensor_core_kernel(float *d_C, const float *d_A, const float *d_B,
+                            int M, int N, int K,
+                            float alpha, float beta,
+                            cudaStream_t stream, int config);
+
 // 验证 GPU 计算结果与参考结果是否一致（允许相对误差）
 bool validate_result(const float *gpu_result, const float *ref_result,
                      int size, float eps, float &max_error, float &avg_error);
 
+// ========== 计时器类 ==========
 // 使用 CUDA Event 的计时器类，用于精确测量 GPU 内核执行时间
 class CudaTimer
 {

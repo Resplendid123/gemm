@@ -1,9 +1,12 @@
 #!/bin/bash
 
+# Stage 3: Register Blocking 优化
+# 测试不同 BM/BN/BK/TM/TN 配置对性能的影响
+
 set -euo pipefail
 
 BENCH="./build/benchmark"
-CONFIGS="./configs/stage3.txt"
+CONFIGS="./configs/stage.txt"
 RUNS=5
 
 OUTPUT_CSV="./results/stage3_results.csv"
@@ -11,13 +14,14 @@ mkdir -p "$(dirname "$OUTPUT_CSV")"
 
 # Register blocking 配置: config_id|BM|BN|BK|TM|TN
 REGISTER_CONFIGS=(
-    "1|64|64|8|4|4"        # Config A: 小块配置
-    "2|64|128|8|4|8"       # Config B: 大列配置
-    "3|128|128|8|8|8"      # Config C: 大块配置 BK=8
-    "4|128|128|16|8|8"     # Config D: 大块配置 BK=16
+    "1|64|64|8|4|4"    # Config A: 小块配置
+    "2|64|128|8|4|8"   # Config B: 大列配置
+    "3|128|128|8|8|8"  # Config C: 大块配置
+    "4|128|128|16|8|8" # Config D: 大块配置
 )
 
-echo "config_name,M,N,K,BM,BN,BK,TM,TN,kernel,avg_time_ms,avg_gflops,rel_to_cublas_pct" > "$OUTPUT_CSV"
+# 统一 CSV 格式: config_name,M,N,K,kernel,BM,BN,BK,TM,TN,avg_time_ms,avg_gflops,rel_to_cublas_pct
+echo "config_name,M,N,K,kernel,BM,BN,BK,TM,TN,avg_time_ms,avg_gflops,rel_to_cublas_pct" > "$OUTPUT_CSV"
 
 run_benchmark() {
     local M=$1
@@ -54,39 +58,42 @@ while IFS= read -r line || [ -n "$line" ]; do
     [[ -z "$line" || "$line" =~ ^# ]] && continue
 
     IFS='|' read -r cfg_name M N K <<< "$line"
-    echo "Running config: $cfg_name ($M x $N x $K)"
+    echo "=========================================="
+    echo "Testing $cfg_name ($M x $N x $K)"
+    echo "=========================================="
 
     # cuBLAS 基准
-    echo "  Testing cublas..."
+    echo "  [Reference] cuBLAS..."
     cublas_out=$(run_benchmark "$M" "$N" "$K" "cublas")
     cublas_time=$(echo "$cublas_out" | sed -n '1p')
     cublas_gflops=$(echo "$cublas_out" | sed -n '2p')
-    echo "$cfg_name,$M,$N,$K,NA,NA,NA,NA,NA,cublas,$cublas_time,$cublas_gflops,100.00%" >> "$OUTPUT_CSV"
+    echo "$cfg_name,$M,$N,$K,cublas,NA,NA,NA,NA,NA,$cublas_time,$cublas_gflops,100.00%" >> "$OUTPUT_CSV"
+    echo "    cuBLAS: time=${cublas_time}ms, GFLOPS=${cublas_gflops}"
 
-    # 测试三种 register blocking 配置
+    # 测试不同 Register Blocking 配置
     for reg_cfg in "${REGISTER_CONFIGS[@]}"; do
         IFS='|' read -r config_id BM BN BK TM TN <<< "$reg_cfg"
-        echo "  Testing register (config=$config_id: BM=$BM, BN=$BN, BK=$BK, TM=$TM, TN=$TN)..."
+        echo "  [Stage3] Register Blocking (config=$config_id: BM=$BM, BN=$BN, BK=$BK, TM=$TM, TN=$TN)..."
 
         reg_out=$(run_benchmark "$M" "$N" "$K" "register" "--config=$config_id")
         reg_time=$(echo "$reg_out" | sed -n '1p')
         reg_gflops=$(echo "$reg_out" | sed -n '2p')
 
-        # 计算相对于 cuBLAS 的性能百分比
         if [ -n "$cublas_gflops" ] && [ "$cublas_gflops" != "0" ]; then
-            rel_cublas=$(echo "scale=2; $reg_gflops * 100 / $cublas_gflops" | bc)
+            rel=$(echo "scale=2; $reg_gflops * 100 / $cublas_gflops" | bc)
         else
-            rel_cublas="0.00"
+            rel="0.00"
         fi
-        [[ $rel_cublas == .* ]] && rel_cublas="0$rel_cublas"
+        [[ $rel == .* ]] && rel="0$rel"
 
-         echo "$cfg_name,$M,$N,$K,$BM,$BN,$BK,$TM,$TN,register,$reg_time,$reg_gflops,${rel_cublas}%" >> "$OUTPUT_CSV"
+        echo "$cfg_name,$M,$N,$K,register,$BM,$BN,$BK,$TM,$TN,$reg_time,$reg_gflops,${rel}%" >> "$OUTPUT_CSV"
+        echo "    Register: time=${reg_time}ms, GFLOPS=${reg_gflops}, rel=${rel}%"
     done
-    echo ""  # 添加空行分隔不同配置的输出
+    echo ""
 
 done < "$CONFIGS"
 
-echo -e "\n结果已保存到: $OUTPUT_CSV"
-echo ""
-echo "=== Results Summary ==="
+echo "=========================================="
+echo "Results saved to: $OUTPUT_CSV"
+echo "=========================================="
 cat "$OUTPUT_CSV"

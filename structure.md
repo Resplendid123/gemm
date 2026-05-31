@@ -129,28 +129,27 @@ threadIdx.y
 当 Warp 0 等待内存时，调度器立即切换到 Warp 1
 
 ### 索引层次
-硬件层级           软件抽象           索引变量
-═══════════════════════════════════════════════════════════════
+硬件视角                    软件视角                    索引变量
+═══════════════════════════════════════════════════════════════════════
 
-GPU Device         Kernel             - (隐式)
+GPU Device  ────────→  Kernel (一次启动)  ────────→  - (无变量)
     │
-    ├─ SM 0         Grid              gridDim (总 Block 数)
-    │   │
-    │   ├─ Block 0  Block             blockIdx (当前 Block ID)
-    │   │   │
-    │   │   ├─ Warp 0                 
-    │   │   │   ├─ Thread 0           threadIdx.x = 0
-    │   │   │   ├─ Thread 1           threadIdx.x = 1
-    │   │   │   └─ ...                
-    │   │   │
-    │   │   ├─ Warp 1                 
-    │   │   └─ ...
-    │   │
-    │   ├─ Block 1  
-    │   └─ ...
+    │   (一个 Grid 的 Block 分布在所有 SM 上)
     │
-    ├─ SM 1
-    └─ ...
+    ├─ SM 0 ──┐
+    │  ├─ Block 0 ──┐
+    │  │  ├─ Warp 0  │                    ┌─ blockIdx (0,1,2,...)
+    │  │  │  ├─ Thread 0 ─┐               ├─ gridDim (总Block数)
+    │  │  │  ├─ Thread 1  │               │
+    │  │  │  └─ ...       │               │
+    │  │  └─ Warp 1       │               │
+    │  └─ Block 1         │               │
+    │                     │               │
+    ├─ SM 1 ──────────────┼─→ Grid ───────┤
+    │  └─ Block 2         │               │
+    │                     │               │
+    └─ SM 2 ──────────────┘               └─ threadIdx (0,1,...31 在warp内)
+       └─ Block 3                              blockDim (每个Block的线程数)
 
 计算公式：
     Global Thread ID (1D) = blockIdx.x × blockDim.x + threadIdx.x

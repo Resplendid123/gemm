@@ -1,12 +1,12 @@
-config_name             , M   , N   , K   , block_x, block_y, kernel, avg_time_ms, avg_gflops, rel_to_cublas_pct, max_relative_error, avg_relative_error, validation_passed
-square_256              ,  256,  256,  256, NA     , NA     , cublas,       0.090,     382.71, 100.00%          , 9.518112e-07      , 1.805857e-07      ,                 1
-square_256              ,  256,  256,  256, NA     , NA     , cpu   ,      15.087,       2.22, 0.58%            , 0.000000e         , 0.000000e         ,                 1
-square_1024             , 1024, 1024, 1024, NA     , NA     , cublas,       0.577,    3750.84, 100.00%          , 2.350815e-06      , 3.952272e-07      ,                 1
-square_1024             , 1024, 1024, 1024, NA     , NA     , cpu   ,    2254.313,       0.95, 0.02%            , 0.000000e         , 0.000000e         ,                 1
-square_4096             , 4096, 4096, 4096, NA     , NA     , cublas,      29.198,    4707.51, 100.00%          , 0.000000e         , 0.000000e         ,                 1
-nonsquare_4096x1024x8192, 4096, 1024, 8192, NA     , NA     , cublas,      13.057,    5263.30, 100.00%          , 0.000000e         , 0.000000e         ,                 1
-nonsquare_8192x512x4096 , 8192,  512, 4096, NA     , NA     , cublas,       7.314,    4697.68, 100.00%          , 0.000000e         , 0.000000e         ,                 1
-unaligned_1000          , 1000, 1000, 1000, NA     , NA     , cublas,       0.562,    3561.93, 100.00%          , 2.424684e-06      , 3.926227e-07      ,                 1
-unaligned_1000          , 1000, 1000, 1000, NA     , NA     , cpu   ,    1063.582,       1.88, 0.05%            , 0.000000e         , 0.000000e         ,                 1
-unaligned_511x1023x2047 ,  511, 1023, 2047, NA     , NA     , cublas,       0.617,    3481.11, 100.00%          , 3.317994e-06      , 6.095246e-07      ,                 1
-unaligned_511x1023x2047 ,  511, 1023, 2047, NA     , NA     , cpu   ,    1888.517,       1.14, 0.03%            , 0.000000e         , 0.000000e         ,                 1
+config_name             , M   , N   , K   , kernel, BM, BN, BK, TM, TN, avg_time_ms, avg_gflops, rel_to_cublas_pct
+square_256              ,  256,  256,  256, cublas, NA, NA, NA, NA, NA,       0.124,     346.65, 100.00%
+square_256              ,  256,  256,  256, cpu   , NA, NA, NA, NA, NA,      15.176,       2.21, 0.63%
+square_1024             , 1024, 1024, 1024, cublas, NA, NA, NA, NA, NA,       0.581,    3708.23, 100.00%
+square_1024             , 1024, 1024, 1024, cpu   , NA, NA, NA, NA, NA,    2484.324,       0.86, 0.02%
+square_4096             , 4096, 4096, 4096, cublas, NA, NA, NA, NA, NA,      31.395,    4379.30, 100.00%
+nonsquare_4096x1024x8192, 4096, 1024, 8192, cublas, NA, NA, NA, NA, NA,      13.100,    5245.71, 100.00%
+nonsquare_8192x512x4096 , 8192,  512, 4096, cublas, NA, NA, NA, NA, NA,       7.350,    4675.37, 100.00%
+unaligned_1000          , 1000, 1000, 1000, cublas, NA, NA, NA, NA, NA,       0.671,    3037.61, 100.00%
+unaligned_1000          , 1000, 1000, 1000, cpu   , NA, NA, NA, NA, NA,    1176.481,       1.70, 0.05%
+unaligned_511x1023x2047 ,  511, 1023, 2047, cublas, NA, NA, NA, NA, NA,       0.572,    3743.27, 100.00%
+unaligned_511x1023x2047 ,  511, 1023, 2047, cpu   , NA, NA, NA, NA, NA,    2371.989,       0.90, 0.02%

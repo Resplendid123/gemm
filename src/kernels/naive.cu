@@ -1,6 +1,6 @@
 #include "gemm_common.h"
 
-// 朴素 CUDA 内核：每个线程计算输出 C 的一个元素
+// ========== Stage 1: Naive CUDA GEMM ==========
 __global__ void naive_gemm_kernel(float *C, const float *A, const float *B,
                                   int M, int N, int K,
                                   float alpha, float beta)

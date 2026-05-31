@@ -1,42 +1,42 @@
 #!/bin/bash
 
+# Stage 1: Naive GEMM 块尺寸调优
+# 测试不同 block 配置对性能的影响
+
 set -euo pipefail
 
 BENCH="./build/benchmark"
-CONFIGS="./configs/stage1.txt"
+CONFIGS="./configs/stage.txt"
 RUNS=5
 
 OUTPUT_CSV="./results/stage1_results.csv"
 mkdir -p "$(dirname "$OUTPUT_CSV")"
 
+# 块尺寸配置: config_id|block_x|block_y
 BLOCK_CONFIGS=(
-    "8 8"
-    "16 16"
-    "32 8"
-    "8 32"
-    "32 32"
+    "1|8|8"      # Config A: 小块
+    "2|16|16"    # Config B: 中块
+    "3|32|8"     # Config C: 横长
+    "4|8|32"     # Config D: 竖长
+    "5|32|32"    # Config E: 大块
 )
 
-echo "config_name,M,N,K,block_x,block_y,kernel,avg_time_ms,avg_gflops,rel_to_cublas_pct" > "$OUTPUT_CSV"
+# 统一 CSV 格式: config_name,M,N,K,kernel,BM,BN,BK,TM,TN,avg_time_ms,avg_gflops,rel_to_cublas_pct
+echo "config_name,M,N,K,kernel,BM,BN,BK,TM,TN,avg_time_ms,avg_gflops,rel_to_cublas_pct" > "$OUTPUT_CSV"
 
 run_benchmark() {
     local M=$1
     local N=$2
     local K=$3
     local kernel=$4
-    local block_x=${5:-}
-    local block_y=${6:-}
+    shift 4
+    local extra_args="$@"
 
     local total_time=0
     local total_gflops=0
 
     for _ in $(seq 1 "$RUNS"); do
-        local out
-        if [ -n "$block_x" ] && [ -n "$block_y" ]; then
-            out=$($BENCH "$M" "$N" "$K" "$kernel" "$block_x" "$block_y" 2>&1)
-        else
-            out=$($BENCH "$M" "$N" "$K" "$kernel" 2>&1)
-        fi
+        local out=$($BENCH "$M" "$N" "$K" "$kernel" $extra_args 2>&1)
 
         local time=$(echo "$out" | grep -oP '[0-9.]+(?= ms)' | head -1)
         local gflops=$(echo "$out" | grep -oP 'GFLOPS: \K[0-9.]+' | head -1)
@@ -46,27 +46,37 @@ run_benchmark() {
     done
 
     avg_time=$(echo "scale=6; $total_time / $RUNS" | bc)
-    avg_gflops=$(echo "scale=6; $total_gflops / $RUNS" | bc)
+    avg_gflops=$(echo "scale=2; $total_gflops / $RUNS" | bc)
     printf "%.3f\n%.2f" "$avg_time" "$avg_gflops"
 }
+
+if [ ! -f "$CONFIGS" ]; then
+    echo "Error: Config file $CONFIGS not found!"
+    exit 1
+fi
 
 while IFS= read -r line || [ -n "$line" ]; do
     [[ -z "$line" || "$line" =~ ^# ]] && continue
 
     IFS='|' read -r cfg_name M N K <<< "$line"
-    echo "Running config: $cfg_name ($M x $N x $K)"
+    echo "=========================================="
+    echo "Testing $cfg_name ($M x $N x $K)"
+    echo "=========================================="
 
-    echo "  Testing cublas baseline..."
+    # cuBLAS 基准
+    echo "  [Reference] cuBLAS..."
     cublas_out=$(run_benchmark "$M" "$N" "$K" "cublas")
     cublas_time=$(echo "$cublas_out" | sed -n '1p')
     cublas_gflops=$(echo "$cublas_out" | sed -n '2p')
-    echo "$cfg_name,$M,$N,$K,NA,NA,cublas,$cublas_time,$cublas_gflops,100.00%" >> "$OUTPUT_CSV"
+    echo "$cfg_name,$M,$N,$K,cublas,NA,NA,NA,NA,NA,$cublas_time,$cublas_gflops,100.00%" >> "$OUTPUT_CSV"
+    echo "    cuBLAS: time=${cublas_time}ms, GFLOPS=${cublas_gflops}"
 
+    # 测试不同块尺寸
     for block_cfg in "${BLOCK_CONFIGS[@]}"; do
-        read -r block_x block_y <<< "$block_cfg"
-        echo "  Testing naive with block(${block_x},${block_y})..."
+        IFS='|' read -r config_id block_x block_y <<< "$block_cfg"
+        echo "  [Stage1] Naive kernel (config=$config_id: ${block_x}x${block_y})..."
 
-        naive_out=$(run_benchmark "$M" "$N" "$K" "naive" "$block_x" "$block_y")
+        naive_out=$(run_benchmark "$M" "$N" "$K" "naive" "--config=$config_id")
         naive_time=$(echo "$naive_out" | sed -n '1p')
         naive_gflops=$(echo "$naive_out" | sed -n '2p')
 
@@ -77,10 +87,15 @@ while IFS= read -r line || [ -n "$line" ]; do
         fi
         [[ $rel == .* ]] && rel="0$rel"
 
-        echo "$cfg_name,$M,$N,$K,$block_x,$block_y,naive,$naive_time,$naive_gflops,$rel%" >> "$OUTPUT_CSV"
+        # naive: BM=block_y, BN=block_x, BK=1, TM=1, TN=1
+        echo "$cfg_name,$M,$N,$K,naive,$block_y,$block_x,1,1,1,$naive_time,$naive_gflops,${rel}%" >> "$OUTPUT_CSV"
+        echo "    Naive: time=${naive_time}ms, GFLOPS=${naive_gflops}, rel=${rel}%"
     done
+    echo ""
 
 done < "$CONFIGS"
 
-echo -e "\n结果已保存到: $OUTPUT_CSV"
+echo "=========================================="
+echo "Results saved to: $OUTPUT_CSV"
+echo "=========================================="
 cat "$OUTPUT_CSV"

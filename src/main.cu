@@ -25,8 +25,9 @@ int main(int argc, char **argv)
     if (argc < 5)
     {
         printf("Usage: %s M N K kernel_type [block_x block_y]\n", argv[0]);
-        printf("kernel_type: naive, shared, cublas, cpu\n");
+        printf("kernel_type: naive, shared, register, bank, doublebuf, tensor, cublas, cpu\n");
         printf("Example: %s 1024 1024 1024 naive 16 16\n", argv[0]);
+        printf("Example: %s 1024 1024 1024 tensor --config=1\n", argv[0]);
         return 1;
     }
 
@@ -73,23 +74,35 @@ int main(int argc, char **argv)
     double elapsed_ms = 0.0;
     double gflops = 0.0;
 
-    // 解析可选参数：支持 --validate 和 --ref=<cpu|cublas>
+    // 解析可选参数：支持 --validate
     bool validate = false;
-    std::string ref_choice = "auto";
     for (int i = 5; i < argc; ++i)
     {
         if (strcmp(argv[i], "--validate") == 0)
             validate = true;
-        else if (strncmp(argv[i], "--ref=", 6) == 0)
-            ref_choice = std::string(argv[i] + 6);
     }
-    // naive kernel (Stage 1)
+
+    // ========== Naive kernel (Stage 1) ==========
     if (kernel_type == "naive")
     {
-        dim3 block(block_x, block_y);
+        int config = 1;
+        int bx = block_x, by = block_y;
+        for (int i = 5; i < argc; ++i)
+        {
+            if (strncmp(argv[i], "--config=", 9) == 0)
+                config = atoi(argv[i] + 9);
+        }
+        // 配置映射: config -> block_x, block_y
+        if (config == 1) { bx = 8; by = 8; }
+        else if (config == 2) { bx = 16; by = 16; }
+        else if (config == 3) { bx = 32; by = 8; }
+        else if (config == 4) { bx = 8; by = 32; }
+        else if (config == 5) { bx = 32; by = 32; }
+
+        dim3 block(bx, by);
         dim3 grid((N + block.x - 1) / block.x, (M + block.y - 1) / block.y);
-        printf("Running naive kernel with grid(%d,%d) block(%d,%d)\n",
-               grid.x, grid.y, block.x, block.y);
+        printf("Running naive kernel config %d with grid(%d,%d) block(%d,%d)\n",
+               config, grid.x, grid.y, block.x, block.y);
 
         // Warmup
         run_naive_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, grid, block);
@@ -108,22 +121,25 @@ int main(int argc, char **argv)
         // Copy result back
         CHECK_CUDA_ERROR(cudaMemcpy(h_C, d_C, size_C, cudaMemcpyDeviceToHost));
     }
-    // Shared memory tiled kernel (Stage 2)
+    // ========== Shared memory tiled kernel (Stage 2) ==========
     else if (kernel_type == "shared")
     {
-        dim3 block(block_x, block_y);
-        dim3 grid((N + block.x - 1) / block.x, (M + block.y - 1) / block.y);
-        printf("Running shared memory kernel with grid(%d,%d) block(%d,%d)\n",
-               grid.x, grid.y, block.x, block.y);
+        int config = 1;
+        for (int i = 5; i < argc; ++i)
+        {
+            if (strncmp(argv[i], "--config=", 9) == 0)
+                config = atoi(argv[i] + 9);
+        }
+        printf("Running shared memory kernel config %d\n", config);
 
         // Warmup
-        run_shared_memory_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, grid, block);
+        run_shared_memory_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, 0, config);
         CHECK_CUDA_ERROR(cudaDeviceSynchronize());
 
         // Measure
         CudaTimer timer;
         timer.start();
-        run_shared_memory_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, grid, block);
+        run_shared_memory_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, 0, config);
         timer.stop();
         elapsed_ms = timer.elapsed_ms();
 
@@ -133,7 +149,7 @@ int main(int argc, char **argv)
         // Copy result back
         CHECK_CUDA_ERROR(cudaMemcpy(h_C, d_C, size_C, cudaMemcpyDeviceToHost));
     }
-    // Register blocking kernel (Stage 3)
+    // ========== Register blocking kernel (Stage 3) ==========
     else if (kernel_type == "register")
     {
         int config = 1;
@@ -161,7 +177,7 @@ int main(int argc, char **argv)
         // Copy result back
         CHECK_CUDA_ERROR(cudaMemcpy(h_C, d_C, size_C, cudaMemcpyDeviceToHost));
     }
-    // Bank conflict avoidance kernel (Stage 4) - 基于 Stage 3 的 Register Blocking + padding
+    // ========== Bank conflict avoidance kernel (Stage 4) ==========
     else if (kernel_type == "bank")
     {
         int config = 1;
@@ -180,6 +196,62 @@ int main(int argc, char **argv)
         CudaTimer timer;
         timer.start();
         run_bank_conflict_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, 0, config);
+        timer.stop();
+        elapsed_ms = timer.elapsed_ms();
+
+        gflops = compute_gflops(M, N, K, elapsed_ms);
+        printf("Time: %.3f ms, GFLOPS: %.2f\n", elapsed_ms, gflops);
+
+        // Copy result back
+        CHECK_CUDA_ERROR(cudaMemcpy(h_C, d_C, size_C, cudaMemcpyDeviceToHost));
+    }
+    // ========== Double buffering kernel (Stage 5) ==========
+    else if (kernel_type == "doublebuf")
+    {
+        int config = 1;
+        for (int i = 5; i < argc; ++i)
+        {
+            if (strncmp(argv[i], "--config=", 9) == 0)
+                config = atoi(argv[i] + 9);
+        }
+        printf("Running double buffering kernel config %d\n", config);
+
+        // Warmup
+        run_double_buffer_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, 0, config);
+        CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+
+        // Measure
+        CudaTimer timer;
+        timer.start();
+        run_double_buffer_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, 0, config);
+        timer.stop();
+        elapsed_ms = timer.elapsed_ms();
+
+        gflops = compute_gflops(M, N, K, elapsed_ms);
+        printf("Time: %.3f ms, GFLOPS: %.2f\n", elapsed_ms, gflops);
+
+        // Copy result back
+        CHECK_CUDA_ERROR(cudaMemcpy(h_C, d_C, size_C, cudaMemcpyDeviceToHost));
+    }
+    // ========== Tensor Core kernel (Stage 6) ==========
+    else if (kernel_type == "tensor")
+    {
+        int config = 1;
+        for (int i = 5; i < argc; ++i)
+        {
+            if (strncmp(argv[i], "--config=", 9) == 0)
+                config = atoi(argv[i] + 9);
+        }
+        printf("Running Tensor Core kernel config %d\n", config);
+
+        // Warmup
+        run_tensor_core_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, 0, config);
+        CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+
+        // Measure
+        CudaTimer timer;
+        timer.start();
+        run_tensor_core_kernel(d_C, d_A, d_B, M, N, K, alpha, beta, 0, config);
         timer.stop();
         elapsed_ms = timer.elapsed_ms();
 
@@ -220,14 +292,13 @@ int main(int argc, char **argv)
     if (validate)
     {
         long long total_elements = static_cast<long long>(M) * static_cast<long long>(N);
-        std::string ref_to_use = ref_choice;
-        if (ref_to_use == "auto")
-        {
-            if (total_elements > 1048576) // > 1024*1024
-                ref_to_use = "cublas";
-            else
-                ref_to_use = "cpu";
-        }
+        std::string ref_to_use;
+
+        // 自动选择参考：大矩阵用 cuBLAS，小矩阵用 CPU
+        if (total_elements > 1048576) // > 1024*1024
+            ref_to_use = "cublas";
+        else
+            ref_to_use = "cpu";
 
         printf("Validation reference: %s (elements=%lld)\n", ref_to_use.c_str(), total_elements);
 
@@ -249,13 +320,21 @@ int main(int argc, char **argv)
             cublasDestroy(ref_handle);
         }
 
+        // Tensor Core / FP16 使用更大的误差阈值
+        float tolerance = 1e-5f;
+        if (kernel_type == "tensor")
+        {
+            tolerance = 1e-2f; // 放宽 1000 倍
+            printf("Using relaxed tolerance for Tensor Core kernel: %e\n", tolerance);
+        }
+
         float max_error = 0.0f;
         float avg_error = 0.0f;
-        bool passed = validate_result(h_C, h_C_ref, M * N, 1e-5f, max_error, avg_error);
+        bool passed = validate_result(h_C, h_C_ref, M * N, tolerance, max_error, avg_error);
 
         printf("Max relative error: %e\n", max_error);
         printf("Avg relative error: %e\n", avg_error);
-        printf("Validation passed: %d\n", passed ? 1 : 0);
+        printf("Validation passed: %d (tolerance: %e)\n", passed ? 1 : 0, tolerance);
     }
     else
         printf("Validation skipped\n");
