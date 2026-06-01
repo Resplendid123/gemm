@@ -35,6 +35,35 @@ clean:
 bank-conflict:
 	cd build && ncu --metrics l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum,l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_st.sum ./benchmark $(M) $(N) $(K) $(KERNEL) --config=$(CONFIG)
 
+# 阶段 7 完整 profiling：保存为 ncu_*.ncu-rep（已纳入仓库）
+ncu-report: $(TARGET)
+	@mkdir -p build
+	@echo "Profiling register / bank / doublebuf / tensor at 1024 and 4096..."
+	cd build && \
+	  ncu --section SpeedOfLight --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats \
+	      --kernel-name regex:register_blocking --launch-skip 1 --launch-count 1 \
+	      -o ncu_register_1024  ../$(TARGET) 1024 1024 1024 register --config=3 && \
+	  ncu --section SpeedOfLight --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats \
+	      --kernel-name regex:bank_conflict    --launch-skip 1 --launch-count 1 \
+	      -o ncu_bank_1024     ../$(TARGET) 1024 1024 1024 bank    --config=3 && \
+	  ncu --section SpeedOfLight --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats \
+	      --kernel-name regex:double_buffer   --launch-skip 1 --launch-count 1 \
+	      -o ncu_doublebuf_1024 ../$(TARGET) 1024 1024 1024 doublebuf --config=4 && \
+	  ncu --section SpeedOfLight --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats \
+	      --kernel-name regex:register_blocking --launch-skip 1 --launch-count 1 \
+	      -o ncu_register_4096 ../$(TARGET) 4096 4096 4096 register --config=3 && \
+	  ncu --section SpeedOfLight --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats \
+	      --kernel-name regex:bank_conflict    --launch-skip 1 --launch-count 1 \
+	      -o ncu_bank_4096     ../$(TARGET) 4096 4096 4096 bank    --config=4 && \
+	  ncu --section SpeedOfLight --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats \
+	      --kernel-name regex:double_buffer   --launch-skip 1 --launch-count 1 \
+	      -o ncu_doublebuf_4096 ../$(TARGET) 4096 4096 4096 doublebuf --config=4 && \
+	  ncu --section SpeedOfLight --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats \
+	      --kernel-name regex:wmma_gemm_fp32  --launch-skip 1 --launch-count 1 \
+	      -o ncu_tensor_4096   ../$(TARGET) 4096 4096 4096 tensor  --config=2
+	@echo "Done. Reports in build/ncu_*.ncu-rep"
+	@echo "Convert to CSV: ncu --import build/ncu_*.ncu-rep --csv --page raw"
+
 # 运行测试
 run:
 	./build/benchmark $(M) $(N) $(K) $(KERNEL) --config=$(CONFIG)
@@ -77,4 +106,4 @@ run-all: $(TARGET)
 	@echo "=========================================="
 
 # 声明伪目标
-.PHONY: all clean bank-conflict run validate validate-all run-all
+.PHONY: all clean bank-conflict run validate validate-all run-all ncu-report

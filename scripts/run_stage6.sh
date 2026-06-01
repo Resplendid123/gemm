@@ -81,7 +81,6 @@ while IFS= read -r line || [ -n "$line" ]; do
         fi
         [[ $rel_tensor == .* ]] && rel_tensor="0$rel_tensor"
 
-        # Tensor Core: BM, BN, BK=16(WMMA_K), TM=16(WMMA_M), TN=16(WMMA_N)
         full_cfg_name="${cfg_name}_${precision}"
         echo "$full_cfg_name,$M,$N,$K,tensor,$bm,$bn,16,16,16,$tensor_time,$tensor_gflops,${rel_tensor}%" >> "$OUTPUT_CSV"
         echo "    Tensor Core ($precision): time=${tensor_time}ms, GFLOPS=${tensor_gflops}, rel=${rel_tensor}%"

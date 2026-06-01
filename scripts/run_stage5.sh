@@ -37,7 +37,7 @@ run_benchmark() {
     for _ in $(seq 1 "$RUNS"); do
         local out=$($BENCH "$M" "$N" "$K" "$kernel" $extra_args 2>&1)
 
-        local time=$(echo "$out" | grep -oP 'Time: \K[0-9.]+')
+        local time=$(echo "$out" | grep -oP '[0-9.]+(?= ms)' | head -1)
         local gflops=$(echo "$out" | grep -oP 'GFLOPS: \K[0-9.]+')
 
         total_time=$(echo "$total_time + ${time:-0}" | bc)
